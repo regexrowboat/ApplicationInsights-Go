@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -28,14 +29,12 @@ type TelemetryConfiguration struct {
 }
 
 // Creates a new TelemetryConfiguration object with the specified
-// instrumentation key and default values.
+// connection string and default values.
 func NewTelemetryConfiguration(instrumentationKey string) *TelemetryConfiguration {
-	return &TelemetryConfiguration{
-		InstrumentationKey: instrumentationKey,
-		EndpointUrl:        "https://dc.services.visualstudio.com/v2/track",
-		MaxBatchSize:       1024,
-		MaxBatchInterval:   time.Duration(10) * time.Second,
-	}
+	config := parseConnectionString(instrumentationKey)
+	config.MaxBatchSize = 1024
+	config.MaxBatchInterval = time.Duration(10) * time.Second
+	return config
 }
 
 func (config *TelemetryConfiguration) setupContext() *TelemetryContext {
@@ -49,4 +48,36 @@ func (config *TelemetryConfiguration) setupContext() *TelemetryContext {
 	}
 
 	return context
+}
+
+// Parse connection string into TelemetryConfiguration. Handles passing just an instrumentation key as well.
+func parseConnectionString(connectionStringOrInstrumentationKey string) *TelemetryConfiguration {
+	parts := strings.Split(connectionStringOrInstrumentationKey, ";")
+
+	if len(parts) == 1 {
+		// If there are no semi-colons, parse it as an instrumentation key
+		return &TelemetryConfiguration{
+			InstrumentationKey: connectionStringOrInstrumentationKey,
+			EndpointUrl:        "https://dc.services.visualstudio.com/v2/track",
+		}
+	}
+
+	var instrumentationKey string
+	var endpointUrl string
+	for _, part := range parts {
+		kv := strings.Split(part, "=")
+		if len(kv) == 2 {
+			switch kv[0] {
+			case "InstrumentationKey":
+				instrumentationKey = kv[1]
+			case "IngestionEndpoint":
+				endpointUrl = kv[1]
+			}
+		}
+	}
+
+	return &TelemetryConfiguration{
+		InstrumentationKey: instrumentationKey,
+		EndpointUrl:        strings.Trim(endpointUrl, "/") + "/v2/track",
+	}
 }
